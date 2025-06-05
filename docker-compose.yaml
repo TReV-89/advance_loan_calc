@@ -1,0 +1,18 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: front_end/Dockerfile
+    ports:
+      - "8501:8501"
+    networks:
+      - my-network
+  backend:
+    build:
+      context: .
+      dockerfile: back_end/Dockerfile
+    networks:
+      - my-network
+networks:
+  my-network:
+    driver: bridge
