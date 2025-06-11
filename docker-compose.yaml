@@ -1,16 +1,14 @@
 services:
   frontend:
     build:
-      context: .
-      dockerfile: front_end/Dockerfile
+      context: front_end
     ports:
       - "8501:8501"
     networks:
       - my-network
   backend:
     build:
-      context: .
-      dockerfile: back_end/Dockerfile
+      context: back_end
     networks:
       - my-network
 networks:

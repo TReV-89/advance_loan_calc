@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import datetime
 
-FASTAPI_BACKEND_URL = "http://127.0.0.1:8000"  
+FASTAPI_BACKEND_URL = "http://backend:8000"
 
 # --- Streamlit App Layout ---
 st.set_page_config(page_title="Salary Advance & Loan Calculator", layout="centered")
@@ -93,7 +93,7 @@ if option == "Get Salary Advance":
                             st.write(
                                 f"**Advance Fee:** UGX {result.get('advance_fee', 0.0):,.2f}"
                             )
-                            
+
                             st.info(
                                 "Your salary advance has been processed and recorded."
                             )
