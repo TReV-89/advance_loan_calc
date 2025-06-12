@@ -2,39 +2,90 @@ import fastapi
 import pandas as pd
 import datetime
 from calculations import (
-    record_loan,
-    if_eligible,
     calculate_advance_amount,
     calculate_total_repayable_loan_amount,
     generate_amortization_schedule,
+    record_loan,  # Make sure record_loan is imported
 )
+import os  # Import os module for path operations
 
-# Initialize loans DataFrame
-loans_df = pd.DataFrame(
-    columns=[
-        "employee_id",
-        "loan_type",
-        "amount",
-        "interest_rate",
-        "loan_term_months",
-        "disbursement_date",
-        "expected_repayment_date",
-        "status",
-        "created_at",
-    ]
-)
+# --- Configuration for CSV Persistence ---
+# Define the directory where you want to store the CSV.
+# Using 'data' folder at the root of your project.
+DATA_DIR = "data"
+LOANS_CSV_FILE = os.path.join(DATA_DIR, "loans.csv")  # Path to your CSV file
 
-# Set correct dtypes
-loans_df = loans_df.astype(
-    {
-        "disbursement_date": "datetime64[ns]",
-        "expected_repayment_date": "datetime64[ns]",
-        "created_at": "datetime64[ns]",
-        "amount": "float64",
-        "interest_rate": "float64",
-        "loan_term_months": "int64",
-    }
-)
+# Ensure the data directory exists
+os.makedirs(DATA_DIR, exist_ok=True)
+
+
+# --- Initialize loans DataFrame (Load from CSV) ---
+def load_loans_from_csv():
+    """Loads the loans DataFrame from a CSV file, or creates an empty one if not found."""
+    if os.path.exists(LOANS_CSV_FILE):
+        try:
+            df = pd.read_csv(LOANS_CSV_FILE)
+            # Ensure correct dtypes after loading, especially for dates
+            date_cols = ["disbursement_date", "expected_repayment_date", "created_at"]
+            for col in date_cols:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col])
+            # Ensure numeric types
+            numeric_cols = ["amount", "interest_rate", "loan_term_months"]
+            for col in numeric_cols:
+                if col in df.columns:
+                    # Coerce errors to NaN and then fill, or just handle gracefully
+                    df[col] = (
+                        pd.to_numeric(df[col], errors="coerce")
+                        .fillna(0)
+                        .astype(df[col].dtype if df[col].dtype != object else float)
+                    )  # Try to preserve original type or default to float
+
+            print(f"Loaded {len(df)} loans from {LOANS_CSV_FILE}")
+            return df
+        except pd.errors.EmptyDataError:
+            print(f"'{LOANS_CSV_FILE}' is empty. Initializing empty DataFrame.")
+            return initialize_empty_loans_df()
+        except Exception as e:
+            print(f"Error loading loans from CSV: {e}. Initializing empty DataFrame.")
+            return initialize_empty_loans_df()
+    else:
+        print(f"'{LOANS_CSV_FILE}' not found. Initializing empty DataFrame.")
+        return initialize_empty_loans_df()
+
+
+def initialize_empty_loans_df():
+    """Initializes an empty loans DataFrame with the correct schema."""
+    df = pd.DataFrame(
+        columns=[
+            "employee_id",
+            "loan_type",
+            "amount",
+            "interest_rate",
+            "loan_term_months",
+            "disbursement_date",
+            "expected_repayment_date",
+            "status",
+            "created_at",
+        ]
+    )
+    # Set correct dtypes for an empty DataFrame
+    df = df.astype(
+        {
+            "disbursement_date": "datetime64[ns]",
+            "expected_repayment_date": "datetime64[ns]",
+            "created_at": "datetime64[ns]",
+            "amount": "float64",
+            "interest_rate": "float64",
+            "loan_term_months": "int64",
+        }
+    )
+    return df
+
+
+# Initialize loans_df by loading from CSV or creating a new one
+loans_df = load_loans_from_csv()
+
 
 loan_salary_app = fastapi.FastAPI()
 
@@ -52,7 +103,12 @@ def serialize_dates(record: dict) -> dict:
     date_fields = ["disbursement_date", "expected_repayment_date", "created_at"]
     for field in date_fields:
         if field in record and isinstance(
-            record[field], (datetime.date, datetime.datetime)
+            record[field],
+            (
+                datetime.date,
+                datetime.datetime,
+                pd.Timestamp,
+            ),  # Add pd.Timestamp for DataFrame dates
         ):
             record[field] = record[field].isoformat()
     return record
@@ -100,6 +156,8 @@ def check_eligibility_detailed(
         )
 
     # Check advance limit (only if other checks pass)
+    # Note: Using the calculate_advance_amount from calculations.py
+    # Ensure gross_salary interpretation is consistent between frontend and calculations.py
     if (
         eligibility_details["salary_check"]
         and eligibility_details["pay_frequency_check"]
@@ -124,9 +182,11 @@ def check_eligibility_detailed(
 @loan_salary_app.post("/calculate_advance")
 def calculate_salary_advance(request: dict):
     """Calculate salary advance eligibility and record approved advances"""
-    global loans_df
+    global loans_df  # Declare global to modify the DataFrame
 
-    # Validation
+    # Validation and request parsing (as per your original code)
+    # ... (omit for brevity, but keep your existing validation here) ...
+
     error, msg = validate_common_fields(
         request, ["gross_salary", "pay_frequency", "employee_id"]
     )
@@ -197,7 +257,7 @@ def calculate_salary_advance(request: dict):
         repayment_date = datetime.date.today() + datetime.timedelta(days=30)
 
         try:
-            loans_df = record_loan(
+            loans_df = record_loan(  # Call record_loan to get updated DataFrame
                 df_loans=loans_df,
                 employee_id=employee_id,
                 loan_type="salary_advance",
@@ -208,6 +268,10 @@ def calculate_salary_advance(request: dict):
                 interest_rate=0.0,
                 loan_term_months=0,
             )
+            # --- Save to CSV after recording a loan ---
+            loans_df.to_csv(LOANS_CSV_FILE, index=False)
+            print(f"Salary advance for {employee_id} saved to {LOANS_CSV_FILE}")
+            # --- End Save ---
         except ValueError as e:
             advance_eligible = False
             advance_message = str(e)
@@ -227,9 +291,10 @@ def calculate_salary_advance(request: dict):
 @loan_salary_app.post("/calculate_loan")
 def calculate_personal_loan(request: dict):
     """Calculate personal loan details and record approved loans"""
-    global loans_df
+    global loans_df  # Declare global to modify the DataFrame
 
-    # Validation
+    # Validation and request parsing (as per your original code)
+    # ... (omit for brevity, but keep your existing validation here) ...
     required_fields = [
         "employee_id",
         "loan_amount",
@@ -281,15 +346,17 @@ def calculate_personal_loan(request: dict):
         amortization_schedule = None
         if not schedule_df.empty:
             amortization_schedule = schedule_df.to_dict(orient="records")
-            for entry in amortization_schedule:
-                entry = serialize_dates(entry)
+            # Dates in amortization_schedule are already strings from generate_amortization_schedule
+            # No need for serialize_dates here if already strftime'd
+            # for entry in amortization_schedule:
+            #     entry = serialize_dates(entry)
 
         # Record the loan
         repayment_date = (
             pd.Timestamp(datetime.date.today()) + pd.DateOffset(months=loan_term_months)
         ).date()
 
-        loans_df = record_loan(
+        loans_df = record_loan(  # Call record_loan to get updated DataFrame
             df_loans=loans_df,
             employee_id=employee_id,
             loan_type="personal_loan",
@@ -300,6 +367,10 @@ def calculate_personal_loan(request: dict):
             expected_repayment_date=repayment_date,
             status="approved",
         )
+        # --- Save to CSV after recording a loan ---
+        loans_df.to_csv(LOANS_CSV_FILE, index=False)
+        print(f"Personal loan for {employee_id} saved to {LOANS_CSV_FILE}")
+        # --- End Save ---
 
         return {
             "error": False,
@@ -322,5 +393,14 @@ def calculate_personal_loan(request: dict):
 @loan_salary_app.get("/loans")
 def get_all_loans():
     """Return all recorded loans"""
+    global loans_df  # Access the global DataFrame
+
+    # Ensure the latest data is loaded before returning (optional, but good for consistency)
+    # If using FastAPI's startup/shutdown events, this might be less critical here
+    # but provides a safety net if external changes occur or startup load fails.
+    loans_df = (
+        load_loans_from_csv()
+    )  # Re-load data just before serving, good for ensuring latest data
+
     records = loans_df.to_dict(orient="records")
     return [serialize_dates(record) for record in records]

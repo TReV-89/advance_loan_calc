@@ -6,11 +6,18 @@ services:
       - "8501:8501"
     networks:
       - my-network
+    volumes:
+      - record_loan_vol:/data
   backend:
     build:
       context: back_end
     networks:
       - my-network
+    volumes:
+      - record_loan_vol:/data  
 networks:
   my-network:
     driver: bridge
+
+volumes:
+  record_loan_vol:

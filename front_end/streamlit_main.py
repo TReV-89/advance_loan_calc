@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 
-#FASTAPI_BACKEND_URL = "http://127.0.0.1:8000"
+# FASTAPI_BACKEND_URL = "http://127.0.0.1:8000"
 FASTAPI_BACKEND_URL = "http://backend:8000"
 
 
@@ -184,12 +184,7 @@ if option == "Get Salary Advance":
                         )
                     else:
                         st.warning(f"**Status:** {result.get('advance_message')}")
-                        if eligibility_details and eligibility_details.get(
-                            "max_eligible_advance"
-                        ):
-                            st.info(
-                                f"💡 Try requesting up to UGX {eligibility_details['max_eligible_advance']:,.2f} instead"
-                            )
+
 
 # Personal Loan Section
 else:
