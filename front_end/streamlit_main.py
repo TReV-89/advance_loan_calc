@@ -48,7 +48,6 @@ def display_eligibility_details(eligibility_details):
         else:
             st.error("❌ Minimum salary requirement not met")
 
-
         # Amount check
         if eligibility_details.get("amount_check"):
             st.success("✅ Valid advance amount")
@@ -86,6 +85,7 @@ def display_eligibility_details(eligibility_details):
             st.info(
                 f"• Reduce your requested advance amount to UGX {max_eligible:,.2f} or less"
             )
+
 
 # App Configuration
 st.set_page_config(page_title="Salary Advance & Loan Calculator", layout="centered")

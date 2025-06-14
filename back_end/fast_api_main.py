@@ -15,38 +15,6 @@ LOANS_CSV_FILE = os.path.join(DATA_DIR, "loans.csv")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def load_loans_from_csv():
-    """Loads the loans DataFrame from a CSV file, or creates an empty one if not found."""
-    if os.path.exists(LOANS_CSV_FILE):
-        try:
-            df = pd.read_csv(LOANS_CSV_FILE)
-            date_cols = ["disbursement_date", "expected_repayment_date", "created_at"]
-            for col in date_cols:
-                if col in df.columns:
-                    df[col] = pd.to_datetime(df[col])
-
-            numeric_cols = ["amount", "interest_rate", "loan_term_months"]
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = (
-                        pd.to_numeric(df[col], errors="coerce")
-                        .fillna(0)
-                        .astype(df[col].dtype if df[col].dtype != object else float)
-                    )
-
-            print(f"Loaded {len(df)} loans from {LOANS_CSV_FILE}")
-            return df
-        except pd.errors.EmptyDataError:
-            print(f"'{LOANS_CSV_FILE}' is empty. Initializing empty DataFrame.")
-            return initialize_empty_loans_df()
-        except Exception as e:
-            print(f"Error loading loans from CSV: {e}. Initializing empty DataFrame.")
-            return initialize_empty_loans_df()
-    else:
-        print(f"'{LOANS_CSV_FILE}' not found. Initializing empty DataFrame.")
-        return initialize_empty_loans_df()
-
-
 def initialize_empty_loans_df():
     """Initializes an empty loans DataFrame"""
     df = pd.DataFrame(
@@ -73,6 +41,34 @@ def initialize_empty_loans_df():
         }
     )
     return df
+
+
+def load_loans_from_csv():
+    """Loads the loans DataFrame from a CSV file, or creates an empty one if not found."""
+    if os.path.exists(LOANS_CSV_FILE):
+        try:
+            df = pd.read_csv(LOANS_CSV_FILE)
+            date_cols = ["disbursement_date", "expected_repayment_date", "created_at"]
+            for col in date_cols:
+                if col in df.columns:
+                    df[col] = pd.to_datetime(df[col])
+
+            numeric_cols = ["amount", "interest_rate", "loan_term_months"]
+            for col in numeric_cols:
+                if col in df.columns:
+                    df[col] = (
+                        pd.to_numeric(df[col], errors="coerce")
+                        .fillna(0)
+                        .astype(df[col].dtype if df[col].dtype != object else float)
+                    )
+
+            return df
+        except pd.errors.EmptyDataError:
+            return initialize_empty_loans_df()
+        except Exception as e:
+            return initialize_empty_loans_df()
+    else:
+        return initialize_empty_loans_df()
 
 
 loans_df = load_loans_from_csv()
@@ -252,7 +248,6 @@ def calculate_salary_advance(request: dict):
             )
             # --- Save to CSV after recording a loan ---
             loans_df.to_csv(LOANS_CSV_FILE, index=False)
-            print(f"Salary advance for {employee_id} saved to {LOANS_CSV_FILE}")
             # --- End Save ---
         except ValueError as e:
             advance_eligible = False
@@ -345,7 +340,6 @@ def calculate_personal_loan(request: dict):
         )
         # --- Save to CSV after recording a loan ---
         loans_df.to_csv(LOANS_CSV_FILE, index=False)
-        print(f"Personal loan for {employee_id} saved to {LOANS_CSV_FILE}")
         # --- End Save ---
 
         return {
