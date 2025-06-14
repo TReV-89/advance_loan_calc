@@ -110,7 +110,7 @@ def calculate_total_repayable_loan_amount(
         return 0
 
     # Compound Interest: A = P * (1 + r/n)^(n*t)
-    n = 12  # Monthly compounding
+    n = 12 
     t_years = loan_term_months / n
     total_amount = principal_amount * math.pow(
         (1 + annual_interest_rate / n), (n * t_years)

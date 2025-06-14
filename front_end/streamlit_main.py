@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import pandas as pd
 
-# FASTAPI_BACKEND_URL = "http://127.0.0.1:8000"
 FASTAPI_BACKEND_URL = "http://backend:8000"
 
 
@@ -40,7 +39,6 @@ def display_eligibility_details(eligibility_details):
 
     st.subheader("📋 Eligibility Criteria Check")
 
-    # Create columns for better layout
     col1, col2 = st.columns([2, 2])
 
     with col1:
@@ -50,11 +48,6 @@ def display_eligibility_details(eligibility_details):
         else:
             st.error("❌ Minimum salary requirement not met")
 
-        # Pay frequency check
-        if eligibility_details.get("pay_frequency_check"):
-            st.success("✅ Valid pay frequency")
-        else:
-            st.error("❌ Invalid pay frequency")
 
         # Amount check
         if eligibility_details.get("amount_check"):
@@ -93,11 +86,6 @@ def display_eligibility_details(eligibility_details):
             st.info(
                 f"• Reduce your requested advance amount to UGX {max_eligible:,.2f} or less"
             )
-        if not eligibility_details.get("pay_frequency_check"):
-            st.info(
-                "• Ensure your pay frequency is one of: Weekly, Bi-weekly, Semi-monthly, or Monthly"
-            )
-
 
 # App Configuration
 st.set_page_config(page_title="Salary Advance & Loan Calculator", layout="centered")
@@ -159,7 +147,6 @@ if option == "Get Salary Advance":
                 result = display_result(result, error)
 
                 if result:
-                    # Display eligibility details first
                     eligibility_details = result.get("eligibility_details")
                     display_eligibility_details(eligibility_details)
 
@@ -175,16 +162,8 @@ if option == "Get Salary Advance":
                             "🎉 Your salary advance has been processed and recorded!"
                         )
 
-                        # Show next steps
-                        st.subheader("📋 Next Steps:")
-                        st.write("1. Your advance will be disbursed within 24 hours")
-                        st.write("2. The amount will be deducted from your next salary")
-                        st.write(
-                            "3. Check the 'All Recorded Loans' section below to view details"
-                        )
                     else:
                         st.warning(f"**Status:** {result.get('advance_message')}")
-
 
 # Personal Loan Section
 else:
@@ -238,7 +217,6 @@ else:
                     st.subheader("Personal Loan Result:")
                     st.success("🎉 Loan calculation successful!")
 
-                    # Display loan summary in metrics
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("Loan Amount", f"UGX {loan_amount}")
@@ -251,14 +229,12 @@ else:
                         f"**Total Repayable:** UGX {result.get('loan_total_repayable_amount', 0):,.2f}"
                     )
 
-                    # Display amortization schedule
                     schedule = result.get("loan_amortization_schedule")
                     if schedule:
                         st.write("### 📊 Amortization Schedule")
                         df = pd.DataFrame(schedule)
                         df["Payment_Date"] = pd.to_datetime(df["Payment_Date"])
 
-                        # Format currency columns
                         currency_cols = [
                             "Beginning_Balance",
                             "Monthly_Payment",
