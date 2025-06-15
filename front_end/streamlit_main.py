@@ -4,7 +4,6 @@ import pandas as pd
 
 FASTAPI_BACKEND_URL = "http://backend:8000"
 
-
 def make_request(endpoint, payload):
     """Handle API requests with unified error handling"""
     try:

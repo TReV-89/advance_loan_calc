@@ -8,6 +8,15 @@ from calculations import (
     record_loan,
 )
 import os
+from pydantic_models import (
+    AdvanceCalculationRequest,
+    LoanCalculationRequest,
+    EligibilityDetails,
+    AdvanceCalculationResponse,
+    LoanCalculationResponse,
+    LoanRecord,
+)
+from typing import List
 
 DATA_DIR = "data"
 LOANS_CSV_FILE = os.path.join(DATA_DIR, "loans.csv")
@@ -16,7 +25,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def initialize_empty_loans_df():
-    """Initializes an empty loans DataFrame"""
     df = pd.DataFrame(
         columns=[
             "employee_id",
@@ -44,7 +52,6 @@ def initialize_empty_loans_df():
 
 
 def load_loans_from_csv():
-    """Loads the loans DataFrame from a CSV file, or creates an empty one if not found."""
     if os.path.exists(LOANS_CSV_FILE):
         try:
             df = pd.read_csv(LOANS_CSV_FILE)
@@ -54,13 +61,6 @@ def load_loans_from_csv():
                     df[col] = pd.to_datetime(df[col])
 
             numeric_cols = ["amount", "interest_rate", "loan_term_months"]
-            for col in numeric_cols:
-                if col in df.columns:
-                    df[col] = (
-                        pd.to_numeric(df[col], errors="coerce")
-                        .fillna(0)
-                        .astype(df[col].dtype if df[col].dtype != object else float)
-                    )
 
             return df
         except pd.errors.EmptyDataError:
@@ -76,153 +76,67 @@ loans_df = load_loans_from_csv()
 loan_salary_app = fastapi.FastAPI()
 
 
-def validate_common_fields(request: dict, required_fields: list) -> tuple:
-    """Validate common request fields and return error if any"""
-    for field in required_fields:
-        if field not in request:
-            return True, f"Missing required field: {field}"
-    return False, None
-
-
-def serialize_dates(record: dict) -> dict:
-    """Convert date objects to ISO format strings"""
-    date_fields = ["disbursement_date", "expected_repayment_date", "created_at"]
-    for field in date_fields:
-        if field in record and isinstance(
-            record[field],
-            (
-                datetime.date,
-                datetime.datetime,
-                pd.Timestamp,
-            ),
-        ):
-            record[field] = record[field].isoformat()
-    return record
-
-
 def check_eligibility_detailed(
     gross_salary: float, pay_frequency: str, requested_advance_amount: float
-) -> dict:
-    """Check eligibility with detailed feedback on each criterion"""
+) -> EligibilityDetails:
     ELIGIBLE_PAY_FREQUENCIES = ["weekly", "bi-weekly", "semi-monthly", "monthly"]
     MIN_SALARY = 200000
 
-    eligibility_details = {
-        "is_eligible": True,
-        "failed_criteria": [],
-        "max_eligible_advance": None,
-        "salary_check": gross_salary >= MIN_SALARY,
-        "pay_frequency_check": pay_frequency.lower() in ELIGIBLE_PAY_FREQUENCIES,
-        "amount_check": requested_advance_amount > 0,
-        "advance_limit_check": True,
-    }
+    eligibility_details = EligibilityDetails(
+        is_eligible=True,
+        failed_criteria=[],
+        max_eligible_advance=None,
+        salary_check=gross_salary >= MIN_SALARY,
+        pay_frequency_check=pay_frequency.lower() in ELIGIBLE_PAY_FREQUENCIES,
+        amount_check=requested_advance_amount > 0,
+        advance_limit_check=True,
+    )
 
-    # Check minimum salary
     if gross_salary < MIN_SALARY:
-        eligibility_details["is_eligible"] = False
-        eligibility_details["salary_check"] = False
-        eligibility_details["failed_criteria"].append(
+        eligibility_details.is_eligible = False
+        eligibility_details.salary_check = False
+        eligibility_details.failed_criteria.append(
             f"Minimum salary requirement not met. Required: UGX {MIN_SALARY:,.2f}, Your salary: UGX {gross_salary:,.2f}"
         )
 
-    # Check pay frequency
-    if pay_frequency.lower() not in ELIGIBLE_PAY_FREQUENCIES:
-        eligibility_details["is_eligible"] = False
-        eligibility_details["pay_frequency_check"] = False
-        eligibility_details["failed_criteria"].append(
-            f"Invalid pay frequency. Supported frequencies: {', '.join(ELIGIBLE_PAY_FREQUENCIES)}"
-        )
-
-    # Check requested amount is positive
     if requested_advance_amount <= 0:
-        eligibility_details["is_eligible"] = False
-        eligibility_details["amount_check"] = False
-        eligibility_details["failed_criteria"].append(
+        eligibility_details.is_eligible = False
+        eligibility_details.amount_check = False
+        eligibility_details.failed_criteria.append(
             "Requested advance amount must be greater than 0"
         )
 
-    if (
-        eligibility_details["salary_check"]
-        and eligibility_details["pay_frequency_check"]
-    ):
+    if eligibility_details.salary_check and eligibility_details.pay_frequency_check:
         try:
             max_eligible = calculate_advance_amount(gross_salary, pay_frequency)
-            eligibility_details["max_eligible_advance"] = max_eligible
+            eligibility_details.max_eligible_advance = max_eligible
 
             if requested_advance_amount > max_eligible:
-                eligibility_details["is_eligible"] = False
-                eligibility_details["advance_limit_check"] = False
-                eligibility_details["failed_criteria"].append(
+                eligibility_details.is_eligible = False
+                eligibility_details.advance_limit_check = False
+                eligibility_details.failed_criteria.append(
                     f"Requested amount exceeds maximum eligible advance. Maximum allowed: UGX {max_eligible:,.2f}, Requested: UGX {requested_advance_amount:,.2f}"
                 )
         except ValueError as e:
-            eligibility_details["is_eligible"] = False
-            eligibility_details["failed_criteria"].append(str(e))
+            eligibility_details.is_eligible = False
+            eligibility_details.failed_criteria.append(str(e))
 
     return eligibility_details
 
 
-@loan_salary_app.post("/calculate_advance")
-def calculate_salary_advance(request: dict):
-    """Calculate salary advance eligibility and record approved advances"""
+@loan_salary_app.post("/calculate_advance", response_model=AdvanceCalculationResponse)
+def calculate_salary_advance(request: AdvanceCalculationRequest):
     global loans_df
 
-    error, msg = validate_common_fields(
-        request, ["gross_salary", "pay_frequency", "employee_id"]
-    )
-    if error:
-        return {
-            "error": True,
-            "error_message": msg,
-            "advance_eligible": False,
-            "advance_message": "Calculation failed",
-            "approved_advance_amount": None,
-            "eligibility_details": None,
-        }
+    gross_salary = request.gross_salary
+    pay_frequency = request.pay_frequency
+    employee_id = request.employee_id
+    requested_amount = request.salary_advance.requested_advance_amount
 
-    if (
-        "salary_advance" not in request
-        or "requested_advance_amount" not in request["salary_advance"]
-    ):
-        return {
-            "error": True,
-            "error_message": "Missing salary_advance details",
-            "advance_eligible": False,
-            "advance_message": "Calculation failed",
-            "approved_advance_amount": None,
-            "eligibility_details": None,
-        }
-
-    gross_salary = request["gross_salary"]
-    pay_frequency = request["pay_frequency"]
-    employee_id = request["employee_id"]
-    requested_amount = request["salary_advance"]["requested_advance_amount"]
-
-    if not isinstance(gross_salary, (int, float)) or gross_salary <= 0:
-        return {
-            "error": True,
-            "error_message": "Invalid gross_salary",
-            "advance_eligible": False,
-            "advance_message": "Calculation failed",
-            "approved_advance_amount": None,
-            "eligibility_details": None,
-        }
-
-    if not isinstance(requested_amount, (int, float)) or requested_amount <= 0:
-        return {
-            "error": True,
-            "error_message": "Invalid requested_advance_amount",
-            "advance_eligible": False,
-            "advance_message": "Calculation failed",
-            "approved_advance_amount": None,
-            "eligibility_details": None,
-        }
-
-    # Check detailed eligibility
     eligibility_details = check_eligibility_detailed(
         gross_salary, pay_frequency, requested_amount
     )
-    advance_eligible = eligibility_details["is_eligible"]
+    advance_eligible = eligibility_details.is_eligible
 
     if advance_eligible:
         advance_message = "Eligible for salary advance."
@@ -246,70 +160,33 @@ def calculate_salary_advance(request: dict):
                 interest_rate=0.0,
                 loan_term_months=0,
             )
-            # --- Save to CSV after recording a loan ---
             loans_df.to_csv(LOANS_CSV_FILE, index=False)
-            # --- End Save ---
         except ValueError as e:
             advance_eligible = False
             advance_message = str(e)
             approved_amount = None
-            eligibility_details["failed_criteria"].append(str(e))
+            eligibility_details.failed_criteria.append(str(e))
 
-    return {
-        "error": False,
-        "error_message": "",
-        "advance_eligible": advance_eligible,
-        "advance_message": advance_message,
-        "approved_advance_amount": approved_amount,
-        "eligibility_details": eligibility_details,
-    }
+    return AdvanceCalculationResponse(
+        error=False,
+        error_message="",
+        advance_eligible=advance_eligible,
+        advance_message=advance_message,
+        approved_advance_amount=approved_amount,
+        eligibility_details=eligibility_details,
+    )
 
 
-@loan_salary_app.post("/calculate_loan")
-def calculate_personal_loan(request: dict):
-    """Calculate personal loan details and record approved loans"""
+@loan_salary_app.post("/calculate_loan", response_model=LoanCalculationResponse)
+def calculate_personal_loan(request: LoanCalculationRequest):
     global loans_df
 
-    required_fields = [
-        "employee_id",
-        "loan_amount",
-        "annual_interest_rate",
-        "loan_term_months",
-    ]
-    error, msg = validate_common_fields(request, required_fields)
-    if error:
-        return {
-            "error": True,
-            "error_message": msg,
-            "loan_requested": False,
-            "loan_total_repayable_amount": None,
-            "loan_amortization_schedule": None,
-        }
-
-    employee_id = request["employee_id"]
-    loan_amount = request["loan_amount"]
-    annual_interest_rate = request["annual_interest_rate"]
-    loan_term_months = request["loan_term_months"]
-
-    # Basic validation
-    if (
-        not isinstance(loan_amount, (int, float))
-        or loan_amount <= 0
-        or not isinstance(annual_interest_rate, (int, float))
-        or not (0 <= annual_interest_rate <= 1.0)
-        or not isinstance(loan_term_months, int)
-        or loan_term_months <= 0
-    ):
-        return {
-            "error": True,
-            "error_message": "Invalid loan parameters",
-            "loan_requested": False,
-            "loan_total_repayable_amount": None,
-            "loan_amortization_schedule": None,
-        }
+    employee_id = request.employee_id
+    loan_amount = request.loan_amount
+    annual_interest_rate = request.annual_interest_rate
+    loan_term_months = request.loan_term_months
 
     try:
-        # Calculate loan details
         total_repayable = calculate_total_repayable_loan_amount(
             loan_amount, annual_interest_rate, loan_term_months
         )
@@ -322,7 +199,6 @@ def calculate_personal_loan(request: dict):
         if not schedule_df.empty:
             amortization_schedule = schedule_df.to_dict(orient="records")
 
-        # Record the loan
         repayment_date = (
             pd.Timestamp(datetime.date.today()) + pd.DateOffset(months=loan_term_months)
         ).date()
@@ -338,33 +214,30 @@ def calculate_personal_loan(request: dict):
             expected_repayment_date=repayment_date,
             status="approved",
         )
-        # --- Save to CSV after recording a loan ---
         loans_df.to_csv(LOANS_CSV_FILE, index=False)
-        # --- End Save ---
 
-        return {
-            "error": False,
-            "error_message": "",
-            "loan_requested": True,
-            "loan_total_repayable_amount": total_repayable,
-            "loan_amortization_schedule": amortization_schedule,
-        }
+        return LoanCalculationResponse(
+            error=False,
+            error_message="",
+            loan_requested=True,
+            loan_total_repayable_amount=total_repayable,
+            loan_amortization_schedule=amortization_schedule,
+        )
 
     except ValueError as e:
-        return {
-            "error": True,
-            "error_message": str(e),
-            "loan_requested": False,
-            "loan_total_repayable_amount": None,
-            "loan_amortization_schedule": None,
-        }
+        return LoanCalculationResponse(
+            error=True,
+            error_message=str(e),
+            loan_requested=False,
+            loan_total_repayable_amount=None,
+            loan_amortization_schedule=None,
+        )
 
 
-@loan_salary_app.get("/loans")
+@loan_salary_app.get("/loans", response_model=List[LoanRecord])
 def get_all_loans():
-    """Return all recorded loans"""
     global loans_df
 
     loans_df = load_loans_from_csv()
     records = loans_df.to_dict(orient="records")
-    return [serialize_dates(record) for record in records]
+    return records
